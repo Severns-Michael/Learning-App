@@ -3,6 +3,7 @@ import { HashRouter, Link, Route, Routes } from "react-router-dom";
 import CourseList from "./pages/CourseList";
 import CourseDetail from "./pages/CourseDetail";
 import SectionDetail from "./pages/SectionDetail";
+import ReviewSession from "./pages/ReviewSession";
 
 export default function App() {
   return (
@@ -24,9 +25,14 @@ export default function App() {
           <Routes>
             <Route path="/" element={<CourseList />} />
             <Route path="/courses/:courseId" element={<CourseDetail />} />
+            <Route path="/courses/:courseId/review" element={<ReviewSession />} />
             <Route
               path="/courses/:courseId/sections/:sectionId"
               element={<SectionDetail />}
+            />
+            <Route
+              path="/courses/:courseId/sections/:sectionId/review"
+              element={<ReviewSession />}
             />
           </Routes>
         </main>

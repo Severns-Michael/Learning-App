@@ -10,6 +10,14 @@ class BloomLevel(models.TextChoices):
     CREATE = "create", "Create"
 
 
+class StudyMode(models.TextChoices):
+    FLASHCARD = "flashcard", "Flashcard"
+    MC = "mc", "Multiple choice"
+    SCENARIO = "scenario", "Scenario"
+    FILL_BLANK = "fill_blank", "Fill in the blank"
+    FREE_RESPONSE = "free_response", "Free response"
+
+
 class KnowledgeUnit(models.Model):
     section = models.ForeignKey(
         "courses.Section",
@@ -50,3 +58,52 @@ class KnowledgeUnit(models.Model):
 
     def __str__(self) -> str:
         return self.concept_summary[:80]
+
+
+class StudyItem(models.Model):
+    """A single retrieval prompt derived from a KnowledgeUnit, in one of 5 modes.
+
+    `expected_answer` and `distractors` are JSON because their shape varies by mode:
+      flashcard:    expected_answer = {"answer": str, "explanation": str?}
+                    distractors    = []
+      mc:           expected_answer = {"answer": str, "explanation": str}
+                    distractors    = [{"text": str, "why_wrong": str}, ...]  # 3 entries
+      scenario:     expected_answer = {"answer": str, "rationale": str,
+                                       "expected_concepts": [str, ...]}
+                    distractors    = []
+      fill_blank:   expected_answer = {"acceptable_answers": [str, ...], "explanation": str?}
+                    distractors    = []
+      free_response: expected_answer = {"model_answer": str,
+                                        "expected_concepts": [str, ...]}
+                    distractors    = []
+    """
+
+    knowledge_unit = models.ForeignKey(
+        KnowledgeUnit,
+        related_name="study_items",
+        on_delete=models.CASCADE,
+    )
+    mode = models.CharField(max_length=20, choices=StudyMode.choices)
+    prompt = models.TextField()
+    expected_answer = models.JSONField(default=dict)
+    distractors = models.JSONField(default=list, blank=True)
+    blooms_level = models.CharField(
+        max_length=20,
+        choices=BloomLevel.choices,
+        default=BloomLevel.UNDERSTAND,
+    )
+    last_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # SM-2 scheduler fields. Defaults sit unused in V1; V2 scheduler will populate.
+    ease_factor = models.FloatField(default=2.5)
+    interval_days = models.PositiveIntegerField(default=0)
+    next_review_at = models.DateTimeField(null=True, blank=True)
+    repetitions = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["knowledge_unit_id", "mode", "id"]
+
+    def __str__(self) -> str:
+        return f"[{self.mode}] {self.prompt[:60]}"

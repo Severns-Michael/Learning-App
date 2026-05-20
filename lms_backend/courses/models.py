@@ -33,6 +33,12 @@ class Section(models.Model):
     order = models.PositiveIntegerField(default=0)
     difficulty = models.PositiveSmallIntegerField(default=3)
     estimated_mastery_min = models.PositiveIntegerField(null=True, blank=True)
+    notes = models.TextField(
+        blank=True,
+        default="",
+        help_text="Editable raw notes for this section. The Ingest action reads "
+        "from this field to generate knowledge units.",
+    )
 
     class Meta:
         ordering = ["course_id", "order", "id"]

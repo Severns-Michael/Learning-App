@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   useCourse,
+  useCourseStudyItems,
   useCreateSection,
   useDeleteSection,
   useSections,
@@ -10,10 +11,12 @@ import {
 import { Button, Card, ErrorText, Input, Label, Spinner } from "../components/ui";
 
 export default function CourseDetail() {
+  const navigate = useNavigate();
   const { courseId } = useParams();
   const id = courseId ? Number(courseId) : undefined;
   const course = useCourse(id);
   const sections = useSections(id);
+  const courseItems = useCourseStudyItems(id);
   const createSection = useCreateSection();
   const deleteSection = useDeleteSection();
 
@@ -63,11 +66,23 @@ export default function CourseDetail() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h2 className="text-lg font-medium">Sections</h2>
-        {!showForm && (
-          <Button onClick={() => setShowForm(true)}>+ New section</Button>
-        )}
+        <div className="flex gap-2">
+          {(courseItems.data?.length ?? 0) > 0 && (
+            <Button
+              onClick={() => navigate(`/courses/${id}/review`)}
+              title={`Review ${courseItems.data?.length ?? 0} items across the whole course`}
+            >
+              ▶ Review course ({courseItems.data?.length ?? 0})
+            </Button>
+          )}
+          {!showForm && (
+            <Button variant="secondary" onClick={() => setShowForm(true)}>
+              + New section
+            </Button>
+          )}
+        </div>
       </div>
 
       {showForm && (

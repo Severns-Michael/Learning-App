@@ -4,7 +4,13 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import type { Course, KnowledgeUnit, Section } from "./types";
+import type {
+  Course,
+  KnowledgeUnit,
+  ReviewLog,
+  Section,
+  StudyItem,
+} from "./types";
 
 const BASE = "http://127.0.0.1:8000/api";
 
@@ -86,6 +92,21 @@ export function useCreateSection() {
   });
 }
 
+export function useUpdateSection(sectionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<Section>) =>
+      request<Section>(`/sections/${sectionId}/`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sections", sectionId] });
+      qc.invalidateQueries({ queryKey: ["sections"] });
+    },
+  });
+}
+
 export function useDeleteSection() {
   const qc = useQueryClient();
   return useMutation({
@@ -112,15 +133,36 @@ export function useKnowledgeUnits(sectionId: number | undefined) {
 export function useIngestNotes(sectionId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (text: string) =>
+    mutationFn: (opts: { text?: string; replace?: boolean } = {}) =>
       request<{ created: KnowledgeUnit[] }>(
         `/sections/${sectionId}/ingest_notes/`,
-        { method: "POST", body: JSON.stringify({ text }) },
+        { method: "POST", body: JSON.stringify(opts) },
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["knowledge-units", { section: sectionId }] });
-      qc.invalidateQueries({ queryKey: ["sections", { course: undefined }] });
-      qc.invalidateQueries({ queryKey: ["sections", sectionId] });
+      qc.invalidateQueries({
+        queryKey: ["knowledge-units", { section: sectionId }],
+      });
+      qc.invalidateQueries({ queryKey: ["sections"] });
+    },
+  });
+}
+
+export function useGenerateSectionItems(sectionId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (opts: { regenerate?: boolean } = {}) =>
+      request<{
+        generated: number;
+        generated_ku_ids: number[];
+        skipped: number;
+        errors: { ku_id: number; message: string }[];
+      }>(`/sections/${sectionId}/generate_items/`, {
+        method: "POST",
+        body: JSON.stringify(opts),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["knowledge-units"] });
+      qc.invalidateQueries({ queryKey: ["study-items"] });
     },
   });
 }
@@ -131,5 +173,77 @@ export function useDeleteKnowledgeUnit() {
     mutationFn: (id: number) =>
       request<void>(`/knowledge-units/${id}/`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge-units"] }),
+  });
+}
+
+// ----- Study Items -----
+
+export function useStudyItems(knowledgeUnitId: number | undefined) {
+  return useQuery({
+    queryKey: ["study-items", { ku: knowledgeUnitId }],
+    queryFn: () =>
+      request<StudyItem[]>(`/study-items/?knowledge_unit=${knowledgeUnitId}`),
+    enabled: knowledgeUnitId !== undefined,
+  });
+}
+
+export function useGenerateItems(knowledgeUnitId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      request<{ created: StudyItem[] }>(
+        `/knowledge-units/${knowledgeUnitId}/generate_items/`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["study-items", { ku: knowledgeUnitId }],
+      });
+      qc.invalidateQueries({ queryKey: ["knowledge-units"] });
+    },
+  });
+}
+
+export function useDeleteStudyItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      request<void>(`/study-items/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["study-items"] });
+      qc.invalidateQueries({ queryKey: ["knowledge-units"] });
+    },
+  });
+}
+
+export function useSectionStudyItems(sectionId: number | undefined) {
+  return useQuery({
+    queryKey: ["study-items", { section: sectionId }],
+    queryFn: () => request<StudyItem[]>(`/study-items/?section=${sectionId}`),
+    enabled: sectionId !== undefined,
+  });
+}
+
+export function useCourseStudyItems(courseId: number | undefined) {
+  return useQuery({
+    queryKey: ["study-items", { course: courseId }],
+    queryFn: () => request<StudyItem[]>(`/study-items/?course=${courseId}`),
+    enabled: courseId !== undefined,
+  });
+}
+
+// ----- Review Logs -----
+
+export function useCreateReviewLog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { study_item: number; was_correct: boolean; user_rating?: number; response_time_ms?: number }) =>
+      request<ReviewLog>("/review-logs/", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["review-logs"] });
+    },
   });
 }

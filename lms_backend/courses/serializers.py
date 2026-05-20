@@ -18,6 +18,7 @@ class SectionSerializer(serializers.ModelSerializer):
             "order",
             "difficulty",
             "estimated_mastery_min",
+            "notes",
             "knowledge_units_count",
         )
 

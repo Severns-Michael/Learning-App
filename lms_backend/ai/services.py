@@ -4,8 +4,8 @@ import logging
 from typing import Any
 
 from ai.client import get_client, get_model
-from ai.prompts import EXTRACT_CONCEPTS_SYSTEM
-from ai.tools import EXTRACT_CONCEPTS_TOOL
+from ai.prompts import EXTRACT_CONCEPTS_SYSTEM, GENERATE_STUDY_ITEMS_SYSTEM
+from ai.tools import EXTRACT_CONCEPTS_TOOL, GENERATE_STUDY_ITEMS_TOOL
 
 logger = logging.getLogger(__name__)
 
@@ -50,3 +50,66 @@ def extract_concepts(notes: str, section_title: str = "") -> list[dict[str, Any]
             return block.input.get("knowledge_units", [])
 
     raise RuntimeError("Claude did not call the extract_concepts tool.")
+
+
+def generate_study_items(
+    *,
+    concept_summary: str,
+    key_terms: list[dict] | None = None,
+    blooms_level: str = "understand",
+    connection_tags: list[str] | None = None,
+    common_misconceptions: list[str] | None = None,
+    source_text: str = "",
+) -> list[dict[str, Any]]:
+    """Call Claude to generate 5+ study items (one per mode) for one KU.
+
+    Returns a list of item dicts shaped per GENERATE_STUDY_ITEMS_TOOL.
+    """
+    client = get_client()
+
+    payload_lines = [f"Concept: {concept_summary}", f"Bloom level: {blooms_level}"]
+    if key_terms:
+        kt_text = "; ".join(
+            f"{kt.get('term')} = {kt.get('definition')}" for kt in key_terms
+        )
+        payload_lines.append(f"Key terms: {kt_text}")
+    if connection_tags:
+        payload_lines.append(f"Tags: {', '.join(connection_tags)}")
+    if common_misconceptions:
+        misc = "; ".join(common_misconceptions)
+        payload_lines.append(f"Common misconceptions: {misc}")
+    if source_text:
+        payload_lines.append(f"Source excerpt:\n{source_text}")
+
+    response = client.messages.create(
+        model=get_model(),
+        max_tokens=8192,
+        system=[
+            {
+                "type": "text",
+                "text": GENERATE_STUDY_ITEMS_SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": "\n\n".join(payload_lines)}],
+        tools=[GENERATE_STUDY_ITEMS_TOOL],
+        tool_choice={"type": "tool", "name": "generate_study_items"},
+    )
+
+    usage = response.usage
+    logger.info(
+        "claude generate_study_items: input=%s cached_read=%s cached_write=%s output=%s",
+        usage.input_tokens,
+        getattr(usage, "cache_read_input_tokens", 0),
+        getattr(usage, "cache_creation_input_tokens", 0),
+        usage.output_tokens,
+    )
+
+    for block in response.content:
+        if (
+            getattr(block, "type", None) == "tool_use"
+            and block.name == "generate_study_items"
+        ):
+            return block.input.get("items", [])
+
+    raise RuntimeError("Claude did not call the generate_study_items tool.")
