@@ -1,62 +1,36 @@
-import { useEffect, useState } from "react";
+import { HashRouter, Link, Route, Routes } from "react-router-dom";
 
-type Health = { ok: boolean; db?: boolean; error?: string };
-type Status = "checking" | "ok" | "error";
+import CourseList from "./pages/CourseList";
+import CourseDetail from "./pages/CourseDetail";
+import SectionDetail from "./pages/SectionDetail";
 
 export default function App() {
-  const [status, setStatus] = useState<Status>("checking");
-  const [detail, setDetail] = useState<string>("");
-
-  useEffect(() => {
-    let cancelled = false;
-    async function check() {
-      try {
-        const res = await fetch("http://127.0.0.1:8000/api/health/");
-        const body: Health = await res.json();
-        if (cancelled) return;
-        if (body.ok && body.db) {
-          setStatus("ok");
-          setDetail("Backend and database reachable.");
-        } else {
-          setStatus("error");
-          setDetail(body.error ?? "Backend reachable but database is not.");
-        }
-      } catch (err) {
-        if (cancelled) return;
-        setStatus("error");
-        setDetail(err instanceof Error ? err.message : String(err));
-      }
-    }
-    check();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-      <div className="max-w-md text-center space-y-4 p-8">
-        <h1 className="text-3xl font-semibold">Personal LMS</h1>
-        <div
-          className={
-            "rounded-lg border p-4 " +
-            (status === "ok"
-              ? "border-emerald-700 bg-emerald-950/40"
-              : status === "error"
-                ? "border-rose-700 bg-rose-950/40"
-                : "border-slate-700 bg-slate-900")
-          }
-        >
-          <div className="font-medium">
-            {status === "checking" && "Connecting to backend…"}
-            {status === "ok" && "Connected to backend"}
-            {status === "error" && "Backend connection failed"}
+    <HashRouter>
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <header className="border-b border-slate-800 bg-slate-900">
+          <div className="max-w-5xl mx-auto px-6 py-4 flex items-center gap-6">
+            <Link to="/" className="text-lg font-semibold">
+              Personal LMS
+            </Link>
+            <nav className="text-sm text-slate-400">
+              <Link to="/" className="hover:text-slate-100">
+                Courses
+              </Link>
+            </nav>
           </div>
-          {detail && (
-            <div className="mt-2 text-sm text-slate-400">{detail}</div>
-          )}
-        </div>
+        </header>
+        <main className="max-w-5xl mx-auto px-6 py-8">
+          <Routes>
+            <Route path="/" element={<CourseList />} />
+            <Route path="/courses/:courseId" element={<CourseDetail />} />
+            <Route
+              path="/courses/:courseId/sections/:sectionId"
+              element={<SectionDetail />}
+            />
+          </Routes>
+        </main>
       </div>
-    </div>
+    </HashRouter>
   );
 }
