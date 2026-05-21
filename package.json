@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.11",
+    "@types/diff": "^7.0.2",
+    "diff": "^9.0.0",
     "electron-updater": "^6.3.9",
     "react-router-dom": "^7.15.1"
   },

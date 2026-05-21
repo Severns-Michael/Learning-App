@@ -16,6 +16,7 @@ class StudyMode(models.TextChoices):
     SCENARIO = "scenario", "Scenario"
     FILL_BLANK = "fill_blank", "Fill in the blank"
     FREE_RESPONSE = "free_response", "Free response"
+    MATCHING = "matching", "Matching"
 
 
 class KnowledgeUnit(models.Model):

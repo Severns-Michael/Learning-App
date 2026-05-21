@@ -47,7 +47,8 @@ export type StudyMode =
   | "mc"
   | "scenario"
   | "fill_blank"
-  | "free_response";
+  | "free_response"
+  | "matching";
 
 export type Distractor = { text: string; why_wrong: string };
 
@@ -70,14 +71,16 @@ export const STUDY_MODES: StudyMode[] = [
   "scenario",
   "fill_blank",
   "free_response",
+  "matching",
 ];
 
 export const MODE_LABELS: Record<StudyMode, string> = {
   flashcard: "Flashcard",
   mc: "Multiple choice",
   scenario: "Scenario",
-  fill_blank: "Fill in blank",
+  fill_blank: "Fill in the blank",
   free_response: "Free response",
+  matching: "Matching",
 };
 
 export type ReviewLog = {
@@ -87,4 +90,41 @@ export type ReviewLog = {
   was_correct: boolean;
   user_rating: number | null;
   response_time_ms: number | null;
+};
+
+export type ScopeStats = {
+  total_kus: number;
+  reviewed_kus: number;
+  mastered_kus: number;
+  mastery_pct: number;
+  accuracy_pct: number;
+  total_items: number;
+  items_reviewed: number;
+  total_reviews: number;
+  last_reviewed_at: string | null;
+};
+
+export type ModeCount = { mode: StudyMode; count: number; pct: number };
+
+export type SectionStatsRow = ScopeStats & {
+  id: number;
+  title: string;
+  order: number;
+};
+
+export type CourseStatsResponse = {
+  course: Course;
+  overall: ScopeStats;
+  sections: SectionStatsRow[];
+  weakest_sections: SectionStatsRow[];
+  mode_distribution_7d: ModeCount[];
+  reviews_today: number;
+};
+
+export type DashboardCourse = Course & { stats: ScopeStats };
+
+export type DashboardResponse = {
+  courses: DashboardCourse[];
+  reviews_today: number;
+  mode_distribution_7d: ModeCount[];
 };

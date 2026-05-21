@@ -5,6 +5,7 @@ import {
   useCourse,
   useCourseStudyItems,
   useCreateReviewLog,
+  useMultiSectionStudyItems,
   useSection,
   useSectionStudyItems,
 } from "../lib/api";
@@ -25,8 +26,13 @@ type ReviewResult = { item: StudyItem; was_correct: boolean };
 export default function ReviewSession() {
   const { courseId, sectionId } = useParams();
   const [searchParams] = useSearchParams();
-  const modeFilter = searchParams.get("mode"); // optional: ?mode=flashcard
+  const modeFilter = searchParams.get("mode"); // optional: ?mode=mc
+  const sectionsParam = searchParams.get("sections"); // optional: ?sections=1,2,3
 
+  const multiSectionIds: number[] = sectionsParam
+    ? sectionsParam.split(",").map((s) => Number(s)).filter((n) => !Number.isNaN(n))
+    : [];
+  const isMultiSectionScope = multiSectionIds.length > 0;
   const isSectionScope = sectionId !== undefined;
   const courseIdNum = courseId ? Number(courseId) : undefined;
   const sectionIdNum = sectionId ? Number(sectionId) : undefined;
@@ -34,8 +40,17 @@ export default function ReviewSession() {
   const section = useSection(isSectionScope ? sectionIdNum : undefined);
   const course = useCourse(courseIdNum);
   const sectionItems = useSectionStudyItems(isSectionScope ? sectionIdNum : undefined);
-  const courseItems = useCourseStudyItems(isSectionScope ? undefined : courseIdNum);
-  const items = isSectionScope ? sectionItems : courseItems;
+  const courseItems = useCourseStudyItems(
+    !isSectionScope && !isMultiSectionScope ? courseIdNum : undefined,
+  );
+  const multiItems = useMultiSectionStudyItems(
+    isMultiSectionScope ? multiSectionIds : [],
+  );
+  const items = isSectionScope
+    ? sectionItems
+    : isMultiSectionScope
+      ? multiItems
+      : courseItems;
 
   const createLog = useCreateReviewLog();
 
@@ -69,7 +84,9 @@ export default function ReviewSession() {
 
   const scopeTitle = isSectionScope
     ? (section.data?.title ?? "Section")
-    : (course.data?.title ?? "Course");
+    : isMultiSectionScope
+      ? `${course.data?.title ?? "Course"} — ${multiSectionIds.length} sections`
+      : (course.data?.title ?? "Course");
   const backTo = isSectionScope
     ? `/courses/${courseId}/sections/${sectionId}`
     : `/courses/${courseId}`;
@@ -183,7 +200,13 @@ function ReviewItem({
   item: StudyItem;
   onResult: (wasCorrect: boolean) => void;
 }) {
-  if (item.mode === "mc") return <MCReview item={item} onResult={onResult} />;
+  // fill_blank is stored as MC (answer + distractors) and reviewed identically.
+  if (item.mode === "mc" || item.mode === "fill_blank") {
+    return <MCReview item={item} onResult={onResult} />;
+  }
+  if (item.mode === "matching") {
+    return <MatchingReview item={item} onResult={onResult} />;
+  }
   return <FlashcardReview item={item} onResult={onResult} />;
 }
 
@@ -362,12 +385,204 @@ function MCReview({
 }
 
 function ModeBadge({ mode }: { mode: string }) {
-  const label = mode === "mc" ? "Multiple choice" : "Flashcard";
+  const label =
+    mode === "mc"
+      ? "Multiple choice"
+      : mode === "fill_blank"
+        ? "Fill in the blank"
+        : mode === "matching"
+          ? "Matching"
+          : "Flashcard";
   return (
     <div className="text-xs">
       <span className="rounded bg-emerald-950/60 border border-emerald-800/50 px-2 py-0.5 text-emerald-300">
         {label}
       </span>
     </div>
+  );
+}
+
+// ----- Matching review -----
+
+type Pair = { term: string; definition: string };
+
+function MatchingReview({
+  item,
+  onResult,
+}: {
+  item: StudyItem;
+  onResult: (wasCorrect: boolean) => void;
+}) {
+  const ea = item.expected_answer as Record<string, unknown>;
+  const pairs: Pair[] = (ea.pairs as Pair[]) ?? [];
+  const explanation = String(ea.explanation ?? "");
+
+  // Stable left order (as authored). Right order shuffled per item.
+  const shuffledRights = useMemo(() => {
+    return shuffle(pairs.map((p, i) => ({ definition: p.definition, originalIndex: i })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
+
+  // Map left index → right's original index that user paired it with.
+  const [assignments, setAssignments] = useState<Record<number, number>>({});
+  const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
+  const [checked, setChecked] = useState(false);
+
+  if (pairs.length === 0) {
+    // Malformed matching item — fall back to "no idea" state.
+    return (
+      <Card className="space-y-4 min-h-[300px]">
+        <ModeBadge mode="matching" />
+        <div className="text-sm text-rose-300">
+          This matching item has no pairs. Regenerate it from the Cards panel.
+        </div>
+        <Button onClick={() => onResult(false)}>Skip</Button>
+      </Card>
+    );
+  }
+
+  function pickRight(originalIndex: number) {
+    if (checked) return;
+    if (selectedLeft === null) return;
+    // If this right is already assigned to a different left, unassign.
+    const newAssignments = { ...assignments };
+    for (const [k, v] of Object.entries(newAssignments)) {
+      if (v === originalIndex) delete newAssignments[Number(k)];
+    }
+    newAssignments[selectedLeft] = originalIndex;
+    setAssignments(newAssignments);
+    setSelectedLeft(null);
+  }
+
+  function clearAssignment(leftIdx: number) {
+    if (checked) return;
+    const next = { ...assignments };
+    delete next[leftIdx];
+    setAssignments(next);
+  }
+
+  const allAssigned = Object.keys(assignments).length === pairs.length;
+  const correctCount = pairs.reduce(
+    (s, _p, i) => s + (assignments[i] === i ? 1 : 0),
+    0,
+  );
+  const allCorrect = correctCount === pairs.length;
+
+  return (
+    <Card className="space-y-4 min-h-[300px] flex flex-col">
+      <ModeBadge mode="matching" />
+      <div className="text-base leading-relaxed">{item.prompt}</div>
+
+      <div className="grid grid-cols-2 gap-3 flex-1">
+        {/* Left: terms */}
+        <div className="space-y-2">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Terms</div>
+          {pairs.map((p, i) => {
+            const assigned = assignments[i];
+            const isCorrect = checked && assigned === i;
+            const isWrong = checked && assigned !== undefined && assigned !== i;
+            const selected = selectedLeft === i;
+            return (
+              <button
+                key={i}
+                onClick={() => !checked && setSelectedLeft(i)}
+                disabled={checked}
+                className={
+                  "w-full text-left rounded-md border px-3 py-2 text-sm transition " +
+                  (isCorrect
+                    ? "border-emerald-600 bg-emerald-950/40 text-emerald-200"
+                    : isWrong
+                      ? "border-rose-700 bg-rose-950/40 text-rose-200"
+                      : selected
+                        ? "border-emerald-500 bg-slate-800 text-slate-100"
+                        : "border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-600 cursor-pointer")
+                }
+              >
+                <div className="font-medium">{p.term}</div>
+                {assigned !== undefined && (
+                  <div className="mt-1 text-xs text-slate-400 flex items-center gap-2">
+                    <span>→ {shuffledRights.find((r) => r.originalIndex === assigned)?.definition}</span>
+                    {!checked && (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearAssignment(i);
+                        }}
+                        className="text-slate-500 hover:text-slate-200"
+                      >
+                        ✕
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right: definitions */}
+        <div className="space-y-2">
+          <div className="text-xs uppercase tracking-wide text-slate-500">
+            Definitions
+          </div>
+          {shuffledRights.map((r) => {
+            const usedBy = Object.entries(assignments).find(
+              ([, v]) => v === r.originalIndex,
+            );
+            const used = !!usedBy;
+            return (
+              <button
+                key={r.originalIndex}
+                onClick={() => pickRight(r.originalIndex)}
+                disabled={checked || selectedLeft === null || used}
+                className={
+                  "w-full text-left rounded-md border px-3 py-2 text-sm transition " +
+                  (used
+                    ? "border-slate-800 bg-slate-900 text-slate-500"
+                    : selectedLeft !== null
+                      ? "border-slate-600 bg-slate-800 text-slate-100 hover:border-emerald-500 cursor-pointer"
+                      : "border-slate-800 bg-slate-950 text-slate-300")
+                }
+              >
+                {r.definition}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-800 pt-3 space-y-2">
+        {!checked ? (
+          <Button
+            onClick={() => setChecked(true)}
+            disabled={!allAssigned}
+            className="w-full"
+            title={allAssigned ? "Check answers" : "Assign all terms first"}
+          >
+            {allAssigned ? "Check answers" : `Assign all (${Object.keys(assignments).length} / ${pairs.length})`}
+          </Button>
+        ) : (
+          <>
+            <div
+              className={`text-sm ${allCorrect ? "text-emerald-300" : "text-amber-300"}`}
+            >
+              {correctCount} / {pairs.length} correct
+              {!allCorrect && (
+                <span className="text-slate-400 ml-2">
+                  — counted as {allCorrect ? "got it" : "didn't get it"}
+                </span>
+              )}
+            </div>
+            {explanation && (
+              <div className="text-xs text-slate-400">{explanation}</div>
+            )}
+            <Button onClick={() => onResult(allCorrect)} className="w-full">
+              Next
+              <span className="ml-2 text-xs opacity-60">[space]</span>
+            </Button>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }

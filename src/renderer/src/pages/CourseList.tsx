@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { useCourses, useCreateCourse, useDeleteCourse } from "../lib/api";
+import { useCreateCourse, useDashboard, useDeleteCourse } from "../lib/api";
+import type { DashboardCourse } from "../lib/types";
 import { Button, Card, ErrorText, Input, Label, Spinner } from "../components/ui";
+import { MasteryProgressBar, StatTile } from "../components/stats";
 
 export default function CourseList() {
-  const courses = useCourses();
+  const dash = useDashboard();
   const createCourse = useCreateCourse();
   const deleteCourse = useDeleteCourse();
 
@@ -29,14 +31,42 @@ export default function CourseList() {
     reset();
   }
 
+  const totalMastered = dash.data?.courses.reduce(
+    (s, c) => s + c.stats.mastered_kus,
+    0,
+  );
+  const totalReviews = dash.data?.courses.reduce(
+    (s, c) => s + c.stats.total_reviews,
+    0,
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Courses</h1>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
         {!showForm && (
           <Button onClick={() => setShowForm(true)}>+ New course</Button>
         )}
       </div>
+
+      {/* Global stats */}
+      {dash.data && (dash.data.courses.length > 0 || dash.data.reviews_today > 0) && (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <StatTile label="Courses" value={dash.data.courses.length} />
+          <StatTile
+            label="Reviews today"
+            value={dash.data.reviews_today}
+            accent={dash.data.reviews_today > 0 ? "good" : "default"}
+          />
+          <StatTile
+            label="Total reviews"
+            value={totalReviews ?? 0}
+            sub={
+              (totalMastered ?? 0) > 0 ? `${totalMastered} KUs mastered` : undefined
+            }
+          />
+        </div>
+      )}
 
       {showForm && (
         <Card>
@@ -73,11 +103,9 @@ export default function CourseList() {
         </Card>
       )}
 
-      {courses.isLoading && <Spinner />}
-      {courses.error && (
-        <ErrorText>{(courses.error as Error).message}</ErrorText>
-      )}
-      {courses.data && courses.data.length === 0 && !showForm && (
+      {dash.isLoading && <Spinner />}
+      {dash.error && <ErrorText>{(dash.error as Error).message}</ErrorText>}
+      {dash.data && dash.data.courses.length === 0 && !showForm && (
         <Card>
           <div className="text-slate-400 text-sm">
             No courses yet. Click <span className="text-slate-100">+ New course</span>{" "}
@@ -87,33 +115,65 @@ export default function CourseList() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {courses.data?.map((c) => (
-          <Card key={c.id} className="flex items-start justify-between gap-4">
-            <Link
-              to={`/courses/${c.id}`}
-              className="flex-1 min-w-0 hover:text-emerald-300"
-            >
-              <div className="font-medium truncate">{c.title}</div>
-              <div className="mt-1 text-xs text-slate-400 flex flex-wrap gap-x-3">
-                <span>{c.sections_count} sections</span>
-                {c.exam_date && <span>exam: {c.exam_date}</span>}
-                <span>priority {c.priority_weight}</span>
-              </div>
-            </Link>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                if (confirm(`Delete "${c.title}" and all its data?`)) {
-                  deleteCourse.mutate(c.id);
-                }
-              }}
-              title="Delete course"
-            >
-              ✕
-            </Button>
-          </Card>
+        {dash.data?.courses.map((c) => (
+          <CourseCard
+            key={c.id}
+            course={c}
+            onDelete={() => deleteCourse.mutate(c.id)}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+function CourseCard({
+  course,
+  onDelete,
+}: {
+  course: DashboardCourse;
+  onDelete: () => void;
+}) {
+  const { stats } = course;
+  return (
+    <Card className="flex items-start justify-between gap-4">
+      <Link
+        to={`/courses/${course.id}`}
+        className="flex-1 min-w-0 space-y-2 hover:text-emerald-300"
+      >
+        <div className="font-medium truncate">{course.title}</div>
+        <div className="text-xs text-slate-400 flex flex-wrap gap-x-3">
+          <span>{course.sections_count} sections</span>
+          <span>{stats.total_kus} KUs</span>
+          {course.exam_date && <span>exam: {course.exam_date}</span>}
+        </div>
+        {stats.total_kus > 0 && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400">Mastery</span>
+              <span className="text-slate-200">
+                {stats.mastered_kus} / {stats.total_kus} · {stats.mastery_pct}%
+              </span>
+            </div>
+            <MasteryProgressBar pct={stats.mastery_pct} />
+          </div>
+        )}
+        {stats.total_reviews > 0 && (
+          <div className="text-xs text-slate-400">
+            {stats.total_reviews} reviews · {stats.accuracy_pct}% accuracy
+          </div>
+        )}
+      </Link>
+      <Button
+        variant="ghost"
+        onClick={(e) => {
+          e.preventDefault();
+          if (confirm(`Delete "${course.title}" and all its data?`)) onDelete();
+        }}
+        title="Delete course"
+      >
+        ✕
+      </Button>
+    </Card>
   );
 }

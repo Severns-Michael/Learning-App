@@ -1,8 +1,9 @@
 GENERATE_STUDY_ITEMS_TOOL = {
     "name": "generate_study_items",
     "description": (
-        "Save the study items for one knowledge unit: exactly one flashcard and "
-        "one multiple-choice item. Always call this tool — do not reply in prose."
+        "Save 2–3 study cards for one knowledge unit. Mix of MC, fill-in-blank "
+        "(stored with MC distractors), and optionally matching when there are "
+        "enough term/definition pairs. Always call this tool — do not reply in prose."
     ),
     "input_schema": {
         "type": "object",
@@ -10,30 +11,32 @@ GENERATE_STUDY_ITEMS_TOOL = {
             "items": {
                 "type": "array",
                 "minItems": 2,
-                "maxItems": 2,
+                "maxItems": 3,
                 "items": {
                     "type": "object",
                     "properties": {
                         "mode": {
                             "type": "string",
-                            "enum": ["flashcard", "mc"],
+                            "enum": ["mc", "fill_blank", "matching"],
                         },
                         "prompt": {"type": "string"},
                         "answer": {
                             "type": "string",
                             "description": (
-                                "The correct answer (string). Required for "
-                                "flashcard, mc, scenario. Use acceptable_answers "
-                                "for fill_blank and model_answer for free_response."
+                                "The correct answer. Required for mode=mc and "
+                                "mode=fill_blank. Leave empty string for matching."
                             ),
                         },
                         "explanation": {
                             "type": "string",
-                            "description": "Optional. Why the answer is what it is.",
+                            "description": "Optional. 1-sentence reason the answer is correct.",
                         },
                         "distractors": {
                             "type": "array",
-                            "description": "Required when mode=mc. Exactly 3 items.",
+                            "description": (
+                                "EXACTLY 3 entries for mc and fill_blank. "
+                                "Empty array for matching."
+                            ),
                             "items": {
                                 "type": "object",
                                 "properties": {
@@ -43,25 +46,19 @@ GENERATE_STUDY_ITEMS_TOOL = {
                                 "required": ["text", "why_wrong"],
                             },
                         },
-                        "rationale": {
-                            "type": "string",
-                            "description": "Required for mode=scenario.",
-                        },
-                        "expected_concepts": {
+                        "pairs": {
                             "type": "array",
-                            "items": {"type": "string"},
                             "description": (
-                                "Required for mode=scenario and mode=free_response."
+                                "Required for mode=matching. 4–6 term↔definition pairs."
                             ),
-                        },
-                        "acceptable_answers": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Required for mode=fill_blank.",
-                        },
-                        "model_answer": {
-                            "type": "string",
-                            "description": "Required for mode=free_response.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "term": {"type": "string"},
+                                    "definition": {"type": "string"},
+                                },
+                                "required": ["term", "definition"],
+                            },
                         },
                         "blooms_level": {
                             "type": "string",

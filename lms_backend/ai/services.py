@@ -4,10 +4,44 @@ import logging
 from typing import Any
 
 from ai.client import get_client, get_model
-from ai.prompts import EXTRACT_CONCEPTS_SYSTEM, GENERATE_STUDY_ITEMS_SYSTEM
+from ai.prompts import (
+    EXPAND_NOTES_SYSTEM,
+    EXTRACT_CONCEPTS_SYSTEM,
+    GENERATE_STUDY_ITEMS_SYSTEM,
+    POLISH_NOTES_SYSTEM,
+)
 from ai.tools import EXTRACT_CONCEPTS_TOOL, GENERATE_STUDY_ITEMS_TOOL
 
 logger = logging.getLogger(__name__)
+
+
+def enhance_notes(raw: str, mode: str = "polish") -> str:
+    """Call Claude to improve notes.
+
+    mode="polish": fix spelling/grammar/light structure, do NOT add content.
+    mode="expand": fill in details, add facts, structure thoroughly.
+
+    Returns the improved text. Does not modify the database.
+    """
+    system = EXPAND_NOTES_SYSTEM if mode == "expand" else POLISH_NOTES_SYSTEM
+    client = get_client()
+    response = client.messages.create(
+        model=get_model(),
+        max_tokens=8192,
+        system=system,
+        messages=[{"role": "user", "content": raw}],
+    )
+    usage = response.usage
+    logger.info(
+        "claude enhance_notes mode=%s: input=%s output=%s",
+        mode,
+        usage.input_tokens,
+        usage.output_tokens,
+    )
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    raise RuntimeError("Claude returned no text content.")
 
 
 def extract_concepts(notes: str, section_title: str = "") -> list[dict[str, Any]]:
@@ -60,8 +94,12 @@ def generate_study_items(
     connection_tags: list[str] | None = None,
     common_misconceptions: list[str] | None = None,
     source_text: str = "",
+    section_terms: list[dict] | None = None,
 ) -> list[dict[str, Any]]:
-    """Call Claude to generate 5+ study items (one per mode) for one KU.
+    """Call Claude to generate 2-3 study items for one KU.
+
+    `section_terms` (other KUs' key terms in the same section) is passed as
+    context so Claude can build matching items that pull from a larger pool.
 
     Returns a list of item dicts shaped per GENERATE_STUDY_ITEMS_TOOL.
     """
@@ -80,6 +118,12 @@ def generate_study_items(
         payload_lines.append(f"Common misconceptions: {misc}")
     if source_text:
         payload_lines.append(f"Source excerpt:\n{source_text}")
+    if section_terms:
+        # Other key terms from sibling KUs — context for matching exercises.
+        other_text = "; ".join(
+            f"{kt.get('term')} = {kt.get('definition')}" for kt in section_terms[:30]
+        )
+        payload_lines.append(f"Other section terms (matching pool): {other_text}")
 
     response = client.messages.create(
         model=get_model(),

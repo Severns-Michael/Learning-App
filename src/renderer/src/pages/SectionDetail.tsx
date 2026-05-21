@@ -2,40 +2,43 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
+  useEnhanceNotes,
   useGenerateSectionItems,
   useIngestNotes,
   useKnowledgeUnits,
   useSection,
+  useSectionStudyItems,
   useUpdateSection,
 } from "../lib/api";
 import { Button, Card, ErrorText, Spinner } from "../components/ui";
-import { KnowledgeUnitCard } from "../components/KnowledgeUnitCard";
+import { KURow } from "../components/KURow";
+import { CardRow } from "../components/CardRow";
+import { Modal } from "../components/Modal";
+import { EnhanceMergeModal } from "../components/EnhanceMergeModal";
 
-type Tab = "notes" | "kus";
+type Panel = "kus" | "cards" | null;
 
 export default function SectionDetail() {
+  const navigate = useNavigate();
   const { courseId, sectionId } = useParams();
   const id = sectionId ? Number(sectionId) : undefined;
 
   const section = useSection(id);
   const kus = useKnowledgeUnits(id);
+  const items = useSectionStudyItems(id);
 
-  // Default to KUs tab if any exist, otherwise notes.
-  const [tab, setTab] = useState<Tab>("notes");
-  const [tabInitialized, setTabInitialized] = useState(false);
-  useEffect(() => {
-    if (!tabInitialized && kus.data) {
-      setTab(kus.data.length > 0 ? "kus" : "notes");
-      setTabInitialized(true);
-    }
-  }, [kus.data, tabInitialized]);
+  const [panel, setPanel] = useState<Panel>(null);
 
   if (section.isLoading) return <Spinner />;
   if (section.error)
     return <ErrorText>{(section.error as Error).message}</ErrorText>;
   if (!section.data || id === undefined) return null;
 
-  const kuCount = section.data.knowledge_units_count;
+  const kuCount = kus.data?.length ?? 0;
+  const cardCount = items.data?.length ?? 0;
+  const kuTitleById = new Map(
+    (kus.data ?? []).map((k) => [k.id, k.concept_summary]),
+  );
 
   return (
     <div className="space-y-6">
@@ -48,56 +51,252 @@ export default function SectionDetail() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">{section.data.title}</h1>
         <div className="mt-1 text-xs text-slate-400">
-          {kuCount} knowledge units · difficulty {section.data.difficulty}
+          difficulty {section.data.difficulty}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-800 -mb-px">
-        <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>
-          Notes
-        </TabButton>
-        <TabButton active={tab === "kus"} onClick={() => setTab("kus")}>
-          Knowledge units{kuCount > 0 ? ` (${kuCount})` : ""}
-        </TabButton>
+      {/* Clickable tile row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Tile
+          label="Knowledge units"
+          value={kuCount}
+          sub="click to view & edit"
+          onClick={() => setPanel("kus")}
+        />
+        <Tile
+          label="Cards"
+          value={cardCount}
+          sub="click to view & edit"
+          onClick={() => setPanel("cards")}
+        />
+        <Tile
+          label="Review"
+          value="▶"
+          sub={cardCount > 0 ? `${cardCount} cards` : "no cards yet"}
+          onClick={() =>
+            cardCount > 0 &&
+            navigate(`/courses/${courseId}/sections/${id}/review`)
+          }
+          disabled={cardCount === 0}
+          accent="emerald"
+        />
       </div>
 
-      {tab === "notes" ? (
-        <NotesTab sectionId={id} initialNotes={section.data.notes} />
-      ) : (
-        <KUsTab sectionId={id} />
-      )}
+      {/* Notes — full width, center stage */}
+      <NotesPane sectionId={id} initialNotes={section.data.notes} />
+
+      {/* Modals */}
+      <Modal
+        open={panel === "kus"}
+        onClose={() => setPanel(null)}
+        title={`Knowledge units (${kuCount})`}
+        rightActions={<KUGenerateButton sectionId={id} kus={kus.data ?? []} />}
+      >
+        <KUsPanelContent
+          kus={kus.data ?? []}
+          isLoading={kus.isLoading}
+        />
+      </Modal>
+
+      <Modal
+        open={panel === "cards"}
+        onClose={() => setPanel(null)}
+        title={`Cards (${cardCount})`}
+        rightActions={
+          cardCount > 0 && (
+            <Button
+              className="!px-2 !py-1 text-xs"
+              onClick={() => {
+                setPanel(null);
+                navigate(`/courses/${courseId}/sections/${id}/review`);
+              }}
+            >
+              ▶ Review
+            </Button>
+          )
+        }
+      >
+        <CardsPanelContent
+          items={items.data ?? []}
+          isLoading={items.isLoading}
+          kuTitleById={(id) => kuTitleById.get(id)}
+        />
+      </Modal>
     </div>
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
+// ----- KUs panel content -----
+
+function KUsPanelContent({
+  kus,
+  isLoading,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+  kus: import("../lib/types").KnowledgeUnit[];
+  isLoading: boolean;
 }) {
+  const [filter, setFilter] = useState("");
+  const filtered = filter.trim()
+    ? kus.filter((k) => {
+        const q = filter.trim().toLowerCase();
+        return (
+          k.concept_summary.toLowerCase().includes(q) ||
+          k.connection_tags.some((t) => t.toLowerCase().includes(q))
+        );
+      })
+    : kus;
+
+  return (
+    <div className="space-y-4">
+      {kus.length > 0 && (
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Search summaries or tags…"
+          className="w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-600"
+        />
+      )}
+
+      {isLoading && <Spinner />}
+      {kus.length === 0 && (
+        <div className="text-sm text-slate-400">
+          No knowledge units yet. Paste notes below and click <b>Ingest</b>.
+        </div>
+      )}
+      {kus.length > 0 && filtered.length === 0 && (
+        <div className="text-sm text-slate-400">No KUs match "{filter}".</div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 auto-rows-min">
+        {filtered.map((ku, idx) => (
+          <KURow key={ku.id} ku={ku} index={idx} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ----- Cards panel content -----
+
+function CardsPanelContent({
+  items,
+  isLoading,
+  kuTitleById,
+}: {
+  items: import("../lib/types").StudyItem[];
+  isLoading: boolean;
+  kuTitleById: (id: number) => string | undefined;
+}) {
+  const [filter, setFilter] = useState("");
+  const filtered = filter.trim()
+    ? items.filter((it) =>
+        it.prompt.toLowerCase().includes(filter.trim().toLowerCase()),
+      )
+    : items;
+
+  return (
+    <div className="space-y-4">
+      {items.length > 0 && (
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Search prompts…"
+          className="w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-600"
+        />
+      )}
+
+      {isLoading && <Spinner />}
+      {items.length === 0 && (
+        <div className="text-sm text-slate-400">
+          No cards yet. Open the <b>Knowledge units</b> panel and click{" "}
+          <b>Generate card</b>, or use the bulk generate button there.
+        </div>
+      )}
+      {items.length > 0 && filtered.length === 0 && (
+        <div className="text-sm text-slate-400">
+          No cards match "{filter}".
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 auto-rows-min">
+        {filtered.map((it, idx) => (
+          <CardRow
+            key={it.id}
+            item={it}
+            index={idx}
+            kuLabel={kuTitleById(it.knowledge_unit)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ----- Tile -----
+
+function Tile({
+  label,
+  value,
+  sub,
+  onClick,
+  disabled,
+  accent = "default",
+}: {
+  label: string;
+  value: number | string;
+  sub?: string;
+  onClick: () => void;
+  disabled?: boolean;
+  accent?: "default" | "emerald";
+}) {
+  const accentClass =
+    accent === "emerald"
+      ? "border-emerald-700/50 bg-emerald-950/30 hover:border-emerald-500 hover:bg-emerald-900/30"
+      : "border-slate-800 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/70";
   return (
     <button
       onClick={onClick}
-      className={
-        "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition " +
-        (active
-          ? "border-emerald-500 text-slate-100"
-          : "border-transparent text-slate-400 hover:text-slate-200")
-      }
+      disabled={disabled}
+      className={`rounded-lg border px-4 py-4 text-left transition ${accentClass} disabled:opacity-40 disabled:cursor-not-allowed`}
     >
-      {children}
+      <div className="text-xs uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-1 text-3xl font-semibold">{value}</div>
+      {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
     </button>
   );
 }
 
-// ----- Notes tab -----
+// ----- KU bulk generate button (header of KU modal) -----
 
-function NotesTab({
+function KUGenerateButton({
+  sectionId,
+  kus,
+}: {
+  sectionId: number;
+  kus: { id: number; study_items_count: number }[];
+}) {
+  const generateAll = useGenerateSectionItems(sectionId);
+  const kusWithoutCard = kus.filter((k) => k.study_items_count === 0).length;
+  if (kus.length === 0) return null;
+  return (
+    <Button
+      className="!px-2 !py-1 text-xs"
+      onClick={() => generateAll.mutate({ regenerate: false })}
+      disabled={generateAll.isPending || kusWithoutCard === 0}
+      title={
+        kusWithoutCard === 0
+          ? "All KUs have cards"
+          : `Generate cards for ${kusWithoutCard} KU(s)`
+      }
+    >
+      {generateAll.isPending ? "…" : `Generate (${kusWithoutCard})`}
+    </Button>
+  );
+}
+
+// ----- Notes pane (full width, primary content) -----
+
+function NotesPane({
   sectionId,
   initialNotes,
 }: {
@@ -107,6 +306,7 @@ function NotesTab({
   const kus = useKnowledgeUnits(sectionId);
   const updateSection = useUpdateSection(sectionId);
   const ingest = useIngestNotes(sectionId);
+  const enhance = useEnhanceNotes(sectionId);
 
   const [notes, setNotes] = useState<string>("");
   const [synced, setSynced] = useState(false);
@@ -118,11 +318,21 @@ function NotesTab({
   }, [initialNotes, synced]);
 
   const [ingestResult, setIngestResult] = useState<string | null>(null);
+  const [enhanceResult, setEnhanceResult] = useState<
+    { original: string; enhanced: string } | null
+  >(null);
   const hasUnsavedNotes = synced && notes !== initialNotes;
   const hasKUs = (kus.data?.length ?? 0) > 0;
 
   async function saveNotes() {
     await updateSection.mutateAsync({ notes });
+  }
+
+  async function runEnhance(mode: "polish" | "expand") {
+    if (!notes.trim()) return;
+    setEnhanceResult(null);
+    const res = await enhance.mutateAsync({ text: notes, mode });
+    setEnhanceResult(res);
   }
 
   async function runIngest() {
@@ -144,7 +354,7 @@ function NotesTab({
   return (
     <Card className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Section notes</h2>
+        <h2 className="text-lg font-medium">Notes</h2>
         {hasUnsavedNotes && (
           <span className="text-xs text-amber-400">Unsaved changes</span>
         )}
@@ -152,9 +362,12 @@ function NotesTab({
       <textarea
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
-        rows={notes ? Math.min(24, Math.max(8, notes.split("\n").length + 2)) : 10}
+        rows={Math.max(20, Math.min(40, (notes || "").split("\n").length + 4))}
         placeholder="Paste or write your notes here. Click Save to persist them. Click Ingest to turn them into knowledge units."
-        className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-600 font-mono"
+        spellCheck
+        autoCorrect="on"
+        autoCapitalize="sentences"
+        className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-600 font-mono leading-relaxed"
       />
       <div className="flex flex-wrap gap-2">
         <Button
@@ -165,130 +378,52 @@ function NotesTab({
           {updateSection.isPending ? "Saving…" : "Save notes"}
         </Button>
         <Button
+          variant="secondary"
+          onClick={() => runEnhance("polish")}
+          disabled={enhance.isPending || !notes.trim()}
+          title="Fix spelling/grammar/structure. Won't add new content. You review the diff before it applies."
+        >
+          {enhance.isPending ? "Working…" : "✨ Polish"}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => runEnhance("expand")}
+          disabled={enhance.isPending || !notes.trim()}
+          title="Fill in missing detail. Adds definitions, sub-topics, structure for stubby notes. You review the diff before it applies."
+        >
+          {enhance.isPending ? "Working…" : "📚 Expand"}
+        </Button>
+        <Button
           onClick={runIngest}
           disabled={ingest.isPending || !notes.trim()}
         >
           {ingest.isPending ? "Ingesting…" : "Ingest notes → KUs"}
         </Button>
-        {ingest.isPending && (
-          <span className="text-xs text-slate-400 self-center">10-30 sec</span>
+        {(ingest.isPending || enhance.isPending) && (
+          <span className="text-xs text-slate-400 self-center">
+            {enhance.isPending ? "10-25 sec" : "10-30 sec"}
+          </span>
         )}
       </div>
       {ingest.error && (
         <ErrorText>{(ingest.error as Error).message}</ErrorText>
       )}
+      {enhance.error && (
+        <ErrorText>{(enhance.error as Error).message}</ErrorText>
+      )}
       {ingestResult && (
         <div className="text-xs text-emerald-300">{ingestResult}</div>
       )}
+
+      {enhanceResult && (
+        <EnhanceMergeModal
+          open
+          onClose={() => setEnhanceResult(null)}
+          original={enhanceResult.original}
+          enhanced={enhanceResult.enhanced}
+          onApply={(merged) => setNotes(merged)}
+        />
+      )}
     </Card>
-  );
-}
-
-// ----- KUs tab -----
-
-function KUsTab({ sectionId }: { sectionId: number }) {
-  const navigate = useNavigate();
-  const { courseId } = useParams();
-  const kus = useKnowledgeUnits(sectionId);
-  const generateAll = useGenerateSectionItems(sectionId);
-  const [generateResult, setGenerateResult] = useState<string | null>(null);
-
-  const hasKUs = (kus.data?.length ?? 0) > 0;
-  const kusWithoutItems =
-    kus.data?.filter((k) => k.study_items_count === 0).length ?? 0;
-  const totalItems =
-    kus.data?.reduce((sum, k) => sum + k.study_items_count, 0) ?? 0;
-
-  async function runGenerateAll(regenerate: boolean) {
-    setGenerateResult(null);
-    if (regenerate) {
-      const ok = confirm(
-        `Regenerate study items for ALL ${kus.data?.length ?? 0} knowledge units? Existing items will be deleted.`,
-      );
-      if (!ok) return;
-    }
-    const res = await generateAll.mutateAsync({ regenerate });
-    const parts = [`Generated: ${res.generated}`, `Skipped: ${res.skipped}`];
-    if (res.errors.length) parts.push(`Errors: ${res.errors.length}`);
-    setGenerateResult(parts.join(" · "));
-  }
-
-  return (
-    <div className="space-y-4">
-      {hasKUs && (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-xs text-slate-400">
-            {kusWithoutItems > 0
-              ? `${kusWithoutItems} KU(s) without study items`
-              : `${totalItems} study items across ${kus.data?.length ?? 0} KU(s)`}
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              onClick={() =>
-                navigate(`/courses/${courseId}/sections/${sectionId}/review`)
-              }
-              disabled={totalItems === 0}
-              title={
-                totalItems === 0
-                  ? "No items to review yet"
-                  : `Review ${totalItems} items in this section`
-              }
-            >
-              ▶ Review section
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => runGenerateAll(false)}
-              disabled={generateAll.isPending || kusWithoutItems === 0}
-              title={
-                kusWithoutItems === 0
-                  ? "All KUs already have items"
-                  : `Generate items for ${kusWithoutItems} KU(s) without items`
-              }
-            >
-              {generateAll.isPending
-                ? "Generating…"
-                : `Generate items (${kusWithoutItems} pending)`}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => runGenerateAll(true)}
-              disabled={generateAll.isPending}
-            >
-              Regenerate all
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {generateAll.isPending && (
-        <div className="text-xs text-slate-400">
-          Calling Claude for {kusWithoutItems} KU(s) in parallel — this may take
-          30 seconds.
-        </div>
-      )}
-      {generateAll.error && (
-        <ErrorText>{(generateAll.error as Error).message}</ErrorText>
-      )}
-      {generateResult && (
-        <div className="text-xs text-emerald-300">{generateResult}</div>
-      )}
-
-      {kus.isLoading && <Spinner />}
-      {kus.data && kus.data.length === 0 && (
-        <Card>
-          <div className="text-slate-400 text-sm">
-            No knowledge units yet. Go to the <b>Notes</b> tab, add notes, and
-            click <b>Ingest</b>.
-          </div>
-        </Card>
-      )}
-
-      <div className="space-y-3">
-        {kus.data?.map((ku) => (
-          <KnowledgeUnitCard key={ku.id} ku={ku} />
-        ))}
-      </div>
-    </div>
   );
 }

@@ -6,6 +6,8 @@ import {
 
 import type {
   Course,
+  CourseStatsResponse,
+  DashboardResponse,
   KnowledgeUnit,
   ReviewLog,
   Section,
@@ -13,6 +15,12 @@ import type {
 } from "./types";
 
 const BASE = "http://127.0.0.1:8000/api";
+
+/** Invalidate cached stats / dashboard after any mutation that changes content. */
+function invalidateStats(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["dashboard"] });
+  qc.invalidateQueries({ queryKey: ["course-stats"] });
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -49,7 +57,10 @@ export function useCreateCourse() {
   return useMutation({
     mutationFn: (body: Partial<Course>) =>
       request<Course>("/courses/", { method: "POST", body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["courses"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["courses"] });
+      invalidateStats(qc);
+    },
   });
 }
 
@@ -58,7 +69,10 @@ export function useDeleteCourse() {
   return useMutation({
     mutationFn: (id: number) =>
       request<void>(`/courses/${id}/`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["courses"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["courses"] });
+      invalidateStats(qc);
+    },
   });
 }
 
@@ -88,6 +102,7 @@ export function useCreateSection() {
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["sections", { course: created.course }] });
       qc.invalidateQueries({ queryKey: ["courses"] });
+      invalidateStats(qc);
     },
   });
 }
@@ -115,6 +130,7 @@ export function useDeleteSection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sections"] });
       qc.invalidateQueries({ queryKey: ["courses"] });
+      invalidateStats(qc);
     },
   });
 }
@@ -127,6 +143,16 @@ export function useKnowledgeUnits(sectionId: number | undefined) {
     queryFn: () =>
       request<KnowledgeUnit[]>(`/knowledge-units/?section=${sectionId}`),
     enabled: sectionId !== undefined,
+  });
+}
+
+export function useEnhanceNotes(sectionId: number) {
+  return useMutation({
+    mutationFn: (opts: { text?: string; mode?: "polish" | "expand" } = {}) =>
+      request<{ original: string; enhanced: string; mode: string }>(
+        `/sections/${sectionId}/enhance_notes/`,
+        { method: "POST", body: JSON.stringify(opts) },
+      ),
   });
 }
 
@@ -143,6 +169,7 @@ export function useIngestNotes(sectionId: number) {
         queryKey: ["knowledge-units", { section: sectionId }],
       });
       qc.invalidateQueries({ queryKey: ["sections"] });
+      invalidateStats(qc);
     },
   });
 }
@@ -163,6 +190,7 @@ export function useGenerateSectionItems(sectionId: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["knowledge-units"] });
       qc.invalidateQueries({ queryKey: ["study-items"] });
+      invalidateStats(qc);
     },
   });
 }
@@ -172,7 +200,10 @@ export function useDeleteKnowledgeUnit() {
   return useMutation({
     mutationFn: (id: number) =>
       request<void>(`/knowledge-units/${id}/`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge-units"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["knowledge-units"] });
+      invalidateStats(qc);
+    },
   });
 }
 
@@ -200,6 +231,7 @@ export function useGenerateItems(knowledgeUnitId: number) {
         queryKey: ["study-items", { ku: knowledgeUnitId }],
       });
       qc.invalidateQueries({ queryKey: ["knowledge-units"] });
+      invalidateStats(qc);
     },
   });
 }
@@ -212,6 +244,7 @@ export function useDeleteStudyItem() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["study-items"] });
       qc.invalidateQueries({ queryKey: ["knowledge-units"] });
+      invalidateStats(qc);
     },
   });
 }
@@ -232,6 +265,62 @@ export function useCourseStudyItems(courseId: number | undefined) {
   });
 }
 
+export function useMultiSectionStudyItems(sectionIds: number[]) {
+  const csv = [...sectionIds].sort((a, b) => a - b).join(",");
+  return useQuery({
+    queryKey: ["study-items", { sections: csv }],
+    queryFn: () => request<StudyItem[]>(`/study-items/?sections=${csv}`),
+    enabled: sectionIds.length > 0,
+  });
+}
+
+export function useUpdateKnowledgeUnit(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<KnowledgeUnit>) =>
+      request<KnowledgeUnit>(`/knowledge-units/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["knowledge-units"] });
+      invalidateStats(qc);
+    },
+  });
+}
+
+export function useUpdateStudyItem(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<StudyItem>) =>
+      request<StudyItem>(`/study-items/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["study-items"] });
+      invalidateStats(qc);
+    },
+  });
+}
+
+// ----- Stats / Dashboard -----
+
+export function useDashboard() {
+  return useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => request<DashboardResponse>("/dashboard/"),
+  });
+}
+
+export function useCourseStats(courseId: number | undefined) {
+  return useQuery({
+    queryKey: ["course-stats", courseId],
+    queryFn: () => request<CourseStatsResponse>(`/courses/${courseId}/stats/`),
+    enabled: courseId !== undefined,
+  });
+}
+
 // ----- Review Logs -----
 
 export function useCreateReviewLog() {
@@ -244,6 +333,7 @@ export function useCreateReviewLog() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["review-logs"] });
+      invalidateStats(qc);
     },
   });
 }

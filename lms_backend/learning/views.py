@@ -39,11 +39,16 @@ def _item_dict_to_fields(item: dict, ku: KnowledgeUnit) -> dict:
             "expected_concepts": item.get("expected_concepts") or [],
         }
     elif mode == "fill_blank":
-        acceptable = item.get("acceptable_answers") or (
-            [item["answer"]] if item.get("answer") else []
-        )
+        # Stored identically to MC: prompt has a blank, but options + answer
+        # are still presented as multiple choice in review.
         base["expected_answer"] = {
-            "acceptable_answers": acceptable,
+            "answer": item.get("answer", ""),
+            "explanation": item.get("explanation", ""),
+        }
+        base["distractors"] = item.get("distractors") or []
+    elif mode == "matching":
+        base["expected_answer"] = {
+            "pairs": item.get("pairs") or [],
             "explanation": item.get("explanation", ""),
         }
     elif mode == "free_response":
@@ -57,10 +62,14 @@ def _item_dict_to_fields(item: dict, ku: KnowledgeUnit) -> dict:
 class KnowledgeUnitViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Knowledge units are created via the ingest endpoint, not direct POST."""
+    """Knowledge units are created via the ingest endpoint, not direct POST.
+
+    Supports PATCH for editing concept_summary, key_terms, connection_tags, etc.
+    """
 
     queryset = KnowledgeUnit.objects.all()
     serializer_class = KnowledgeUnitSerializer
@@ -78,6 +87,11 @@ class KnowledgeUnitViewSet(
     @action(detail=True, methods=["post"], url_path="generate_items")
     def generate_items(self, request, pk=None):
         ku = self.get_object()
+        # Build a matching-pool from the rest of the section's key terms.
+        section_terms = []
+        for other in ku.section.knowledge_units.exclude(pk=ku.pk):
+            for kt in (other.key_terms or []):
+                section_terms.append(kt)
         try:
             generated = generate_study_items(
                 concept_summary=ku.concept_summary,
@@ -86,6 +100,7 @@ class KnowledgeUnitViewSet(
                 connection_tags=ku.connection_tags or [],
                 common_misconceptions=ku.common_misconceptions or [],
                 source_text=ku.source_text,
+                section_terms=section_terms,
             )
         except Exception as exc:
             return Response(
@@ -111,9 +126,12 @@ class KnowledgeUnitViewSet(
 class StudyItemViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
+    """Study items are created via generate endpoints. PATCH allowed for edits."""
+
     queryset = StudyItem.objects.all()
     serializer_class = StudyItemSerializer
 
@@ -125,6 +143,12 @@ class StudyItemViewSet(
         section_id = self.request.query_params.get("section")
         if section_id:
             qs = qs.filter(knowledge_unit__section_id=section_id)
+        # Multi-section filter: ?sections=1,2,3
+        sections_csv = self.request.query_params.get("sections")
+        if sections_csv:
+            ids = [int(x) for x in sections_csv.split(",") if x.strip().isdigit()]
+            if ids:
+                qs = qs.filter(knowledge_unit__section_id__in=ids)
         course_id = self.request.query_params.get("course")
         if course_id:
             qs = qs.filter(knowledge_unit__section__course_id=course_id)
