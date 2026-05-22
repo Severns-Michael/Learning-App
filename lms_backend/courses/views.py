@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from ai.services import enhance_notes as enhance_notes_service
-from ai.services import extract_concepts, generate_study_items
+from ai.services import extract_concepts, generate_study_items, rewrite_passage
 from courses.models import Course, Section
 from courses.serializers import CourseSerializer, SectionSerializer
 from learning.mastery import (
@@ -70,9 +70,9 @@ class SectionViewSet(viewsets.ModelViewSet):
         section = self.get_object()
         text = (request.data.get("text") or section.notes or "").strip()
         mode = request.data.get("mode") or "polish"
-        if mode not in ("polish", "expand"):
+        if mode not in ("polish", "expand", "fill_blanks"):
             return Response(
-                {"detail": "mode must be 'polish' or 'expand'"},
+                {"detail": "mode must be 'polish', 'expand', or 'fill_blanks'"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not text:
@@ -80,14 +80,66 @@ class SectionViewSet(viewsets.ModelViewSet):
                 {"detail": "no text to enhance"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if mode == "fill_blanks" and "$$" not in text:
+            return Response(
+                {"detail": "no $$ placeholders found in notes"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
-            enhanced = enhance_notes_service(raw=text, mode=mode)
+            enhanced = enhance_notes_service(
+                raw=text,
+                mode=mode,
+                course_title=section.course.title,
+                section_title=section.title,
+            )
         except Exception as exc:
             return Response(
                 {"detail": f"Enhancement failed: {exc}"},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response({"original": text, "enhanced": enhanced, "mode": mode})
+
+    @action(detail=True, methods=["post"], url_path="rewrite_passage")
+    def rewrite_passage(self, request, pk=None):
+        """Regenerate a specific hunk of notes with a user-supplied instruction.
+
+        Body: {
+            original:        str  (required) — student's original text for this hunk
+            previous?:       str  — the AI version they're rejecting (helps Claude iterate)
+            instruction:     str  (required) — e.g. "shorter", "add an example"
+            context_before?: str  — surrounding text before, for style/format context
+            context_after?:  str  — surrounding text after
+        }
+        """
+        section = self.get_object()
+        original = (request.data.get("original") or "").strip()
+        instruction = (request.data.get("instruction") or "").strip()
+        if not original:
+            return Response(
+                {"detail": "original is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not instruction:
+            return Response(
+                {"detail": "instruction is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            rewritten = rewrite_passage(
+                original=original,
+                previous=(request.data.get("previous") or "").strip(),
+                instruction=instruction,
+                context_before=(request.data.get("context_before") or "").strip(),
+                context_after=(request.data.get("context_after") or "").strip(),
+                course_title=section.course.title,
+                section_title=section.title,
+            )
+        except Exception as exc:
+            return Response(
+                {"detail": f"Rewrite failed: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({"rewritten": rewritten})
 
     @action(detail=True, methods=["post"], url_path="ingest_notes")
     def ingest_notes(self, request, pk=None):
@@ -115,7 +167,9 @@ class SectionViewSet(viewsets.ModelViewSet):
 
         try:
             extracted = extract_concepts(
-                notes=source, section_title=section.title
+                notes=source,
+                section_title=section.title,
+                course_title=section.course.title,
             )
         except Exception as exc:
             return Response(
@@ -193,6 +247,8 @@ class SectionViewSet(viewsets.ModelViewSet):
                     common_misconceptions=ku.common_misconceptions or [],
                     source_text=ku.source_text,
                     section_terms=others,
+                    course_title=section.course.title,
+                    section_title=section.title,
                 )
                 return ku, items, None
             except Exception as exc:

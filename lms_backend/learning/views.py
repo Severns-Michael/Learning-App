@@ -101,6 +101,8 @@ class KnowledgeUnitViewSet(
                 common_misconceptions=ku.common_misconceptions or [],
                 source_text=ku.source_text,
                 section_terms=section_terms,
+                course_title=ku.section.course.title,
+                section_title=ku.section.title,
             )
         except Exception as exc:
             return Response(

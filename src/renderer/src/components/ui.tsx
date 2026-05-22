@@ -68,3 +68,13 @@ export function Spinner({ size = 4 }: { size?: number }) {
 export function ErrorText({ children }: { children: ReactNode }) {
   return <div className="text-sm text-rose-400">{children}</div>;
 }
+
+/** Renders the error from a React Query mutation, or nothing. */
+export function MutationError({
+  mutation,
+}: {
+  mutation: { error: unknown };
+}) {
+  if (!mutation.error) return null;
+  return <ErrorText>{(mutation.error as Error).message}</ErrorText>;
+}

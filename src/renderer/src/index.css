@@ -1,1 +1,569 @@
 @import "tailwindcss";
+
+/* ---------- Notes view (Word-style typography for the WYSIWYG editor) ---------- */
+/* Element-selector based so it styles both raw HTML and TipTap's rendered DOM. */
+
+.notes-view {
+  color: rgb(226 232 240); /* slate-200 on screen */
+  font-family: "Georgia", "Cambria", "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.notes-view h1 {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 1.1rem 0 0.4rem 0;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgb(51 65 85);
+}
+.notes-view h1:first-child,
+.notes-view h2:first-child,
+.notes-view h3:first-child,
+.notes-view h4:first-child {
+  margin-top: 0;
+}
+.notes-view h2 {
+  font-size: 21px;
+  font-weight: 700;
+  margin: 1rem 0 0.35rem 0;
+}
+.notes-view h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0.85rem 0 0.3rem 0;
+}
+.notes-view h4 {
+  font-size: 15px;
+  font-weight: 700;
+  font-style: italic;
+  margin: 0.7rem 0 0.25rem 0;
+}
+.notes-view p {
+  margin: 0.35rem 0;
+}
+.notes-view p:first-child {
+  margin-top: 0;
+}
+.notes-view h1 + p,
+.notes-view h2 + p,
+.notes-view h3 + p,
+.notes-view h4 + p {
+  margin-top: 0.1rem;
+}
+.notes-view ul,
+.notes-view ol {
+  margin: 0.3rem 0 0.4rem 1.5rem;
+  padding-left: 0.5rem;
+}
+.notes-view ul {
+  list-style: disc outside;
+}
+.notes-view ol {
+  list-style: decimal outside;
+}
+.notes-view ul ul {
+  list-style: circle outside;
+}
+.notes-view ul ul ul {
+  list-style: square outside;
+}
+.notes-view li {
+  margin: 0.1rem 0;
+  padding-left: 0.15rem;
+}
+.notes-view li > p {
+  margin: 0;
+}
+.notes-view li > ul,
+.notes-view li > ol {
+  margin-top: 0.1rem;
+  margin-bottom: 0.1rem;
+}
+.notes-view blockquote {
+  border-left: 3px solid rgb(71 85 105);
+  padding: 0.2rem 0.8rem;
+  margin: 0.6rem 0;
+  color: rgb(148 163 184);
+  font-style: italic;
+}
+.notes-view code {
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 0.9em;
+  background: rgb(15 23 42);
+  border: 1px solid rgb(51 65 85);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+  color: rgb(252 211 77); /* amber-300 */
+}
+.notes-view pre {
+  background: rgb(15 23 42);
+  border: 1px solid rgb(51 65 85);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  margin: 0.7rem 0;
+  overflow-x: auto;
+}
+.notes-view pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: rgb(226 232 240);
+  font-size: 0.85em;
+}
+.notes-view table {
+  border-collapse: collapse;
+  margin: 0.7rem 0;
+  width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+}
+.notes-view thead {
+  background: rgb(30 41 59);
+}
+.notes-view th,
+.notes-view td {
+  border: 1px solid rgb(51 65 85);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+  min-width: 4rem;
+  position: relative;
+}
+.notes-view th {
+  background: rgb(30 41 59);
+  font-weight: 700;
+}
+.notes-view th > p,
+.notes-view td > p {
+  margin: 0;
+}
+/* Selected cells (TipTap) */
+.notes-view .selectedCell {
+  background: rgba(16, 185, 129, 0.15);
+}
+/* Column resize handle */
+.notes-view .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: rgb(16 185 129);
+  pointer-events: none;
+}
+.notes-view.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}
+.notes-view hr {
+  border: none;
+  border-top: 1px solid rgb(51 65 85);
+  margin: 1.2rem 0;
+}
+.notes-view a {
+  color: rgb(110 231 183); /* emerald-300 */
+  text-decoration: underline;
+}
+.notes-view strong {
+  font-weight: 700;
+}
+.notes-view em {
+  font-style: italic;
+}
+.notes-view u {
+  text-decoration: underline;
+}
+
+/* $$ placeholder pill (rendered via ProseMirror decoration in the editor) */
+.nv-blank {
+  background: rgb(120 53 15); /* amber-900 */
+  color: rgb(253 230 138); /* amber-200 */
+  border-radius: 4px;
+  padding: 0 0.25em;
+  font-family: "Consolas", "Monaco", monospace;
+  font-size: 0.9em;
+  letter-spacing: 0.05em;
+}
+
+/* ---------- TipTap editor chrome ---------- */
+
+.notes-editor-content {
+  outline: none;
+  min-height: 100%;
+}
+
+.notes-editor-content .ProseMirror-trailingBreak {
+  display: inline;
+}
+
+/* Google-Docs-style editor surface: dark scroller, stacked page rectangles
+   in an overlay, contenteditable on top with content pushed by the PageBreaks
+   plugin to align with page boundaries. */
+
+.notes-editor-scroller {
+  background: rgb(8 11 22);
+  padding: 28px 24px;
+  min-height: 24rem;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+/* Wrapper sized to fit N pages. Its min-height is set inline by the React
+   component (pageCount × pageHeight + (pageCount−1) × gap). */
+.notes-pages-wrapper {
+  position: relative;
+  width: 8.5in;
+  margin: 0 auto;
+}
+
+/* Pages overlay sits behind the contenteditable. Each page rect is absolutely
+   positioned at i × stride. The gaps between rects show the dark scroller bg
+   through, giving the visible "stacked pages" effect. */
+.notes-pages-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.notes-page-rect {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 11in;
+  background: #ffffff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+}
+
+.notes-page-footer {
+  position: absolute;
+  bottom: 0.2in;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 9pt;
+  color: #aaa;
+  font-family: -apple-system, ui-sans-serif, sans-serif;
+}
+
+/* Contenteditable sits ON TOP of the overlay, transparent so page rects show
+   through. Padding-top = 0.5in so the first block lands inside page 1's
+   content area; horizontal padding = 0.5in matches page margins. */
+.notes-pages-wrapper .notes-editor-content {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  padding: 0.5in 0.5in 0 0.5in;
+  outline: none;
+  color: #111111;
+}
+
+/* Light typography overrides for the contenteditable. */
+.notes-pages-wrapper .notes-view {
+  color: #111111;
+  background: transparent;
+}
+.notes-pages-wrapper .notes-view h1,
+.notes-pages-wrapper .notes-view h2,
+.notes-pages-wrapper .notes-view h3,
+.notes-pages-wrapper .notes-view h4 {
+  color: #000;
+}
+.notes-pages-wrapper .notes-view h1 {
+  border-bottom: 1px solid #888;
+}
+.notes-pages-wrapper .notes-view code {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #b45309;
+}
+.notes-pages-wrapper .notes-view pre {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+.notes-pages-wrapper .notes-view pre code {
+  background: transparent;
+  border: none;
+  color: #111;
+}
+.notes-pages-wrapper .notes-view blockquote {
+  color: #374151;
+  border-left-color: #9ca3af;
+}
+.notes-pages-wrapper .notes-view th,
+.notes-pages-wrapper .notes-view td {
+  border-color: #9ca3af;
+}
+.notes-pages-wrapper .notes-view thead {
+  background: #f3f4f6;
+}
+.notes-pages-wrapper .notes-view a {
+  color: #1d4ed8;
+}
+.notes-pages-wrapper .nv-blank {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Pagination spacers (inserted by PageBreaks plugin to push blocks to the
+   next page). Must have zero margin/padding/border so their `height: Npx` is
+   exact — any margin-collapse with surrounding blocks would break the math. */
+.pb-page-spacer {
+  display: block;
+  width: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+
+/* Placeholder shown when the editor is empty */
+.notes-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: rgb(150 150 150);
+  font-style: italic;
+}
+
+/* ---------- Paginated preview (Google-Docs-style discrete pages) ---------- */
+
+.paginated-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+  padding: 24px 16px;
+}
+
+.paginated-page {
+  position: relative;
+  background: #ffffff;
+  color: #111111;
+  width: 8.5in;
+  height: 11in;
+  padding: 0.5in;
+  box-sizing: border-box;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.paginated-page-content {
+  /* Content area = page − padding. Height fixed so anything that overflows
+     gets clipped (rather than spilling into the next page's visual). */
+  height: calc(11in - 1in);
+  overflow: hidden;
+}
+
+.page-footer {
+  position: absolute;
+  bottom: 0.2in;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 9pt;
+  color: #888;
+  font-family: -apple-system, ui-sans-serif, sans-serif;
+}
+
+/* Light-theme overrides inside paginated pages (matches print appearance). */
+.paginated-page .notes-view {
+  color: #111111;
+  max-width: 100%;
+}
+.paginated-page .notes-view h1,
+.paginated-page .notes-view h2,
+.paginated-page .notes-view h3,
+.paginated-page .notes-view h4 {
+  color: #000;
+}
+.paginated-page .notes-view h1 {
+  border-bottom: 1px solid #888;
+}
+.paginated-page .notes-view code {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  color: #b45309;
+}
+.paginated-page .notes-view pre {
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+}
+.paginated-page .notes-view pre code {
+  background: transparent;
+  border: none;
+  color: #111;
+}
+.paginated-page .notes-view blockquote {
+  color: #374151;
+  border-left-color: #9ca3af;
+}
+.paginated-page .notes-view th,
+.paginated-page .notes-view td {
+  border-color: #9ca3af;
+}
+.paginated-page .notes-view thead {
+  background: #f3f4f6;
+}
+.paginated-page .notes-view a {
+  color: #1d4ed8;
+}
+.paginated-page .nv-blank {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* ---------- Print ---------- */
+
+@media print {
+  header,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root,
+  main {
+    background: #ffffff !important;
+    color: #111111 !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* When the paginated preview is mounted, each .paginated-page becomes one
+     printed page — the on-screen pagination IS the print pagination (WYSIWYG). */
+  .paginated-pages {
+    display: block !important;
+    gap: 0 !important;
+    padding: 0 !important;
+  }
+  .paginated-page {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    border: none !important;
+    page-break-after: always;
+    break-after: page;
+    margin: 0 !important;
+    /* Keep explicit 8.5in × 11in so content fits the printed page exactly. */
+  }
+  .paginated-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  .paginated-page-content {
+    overflow: visible !important; /* show full content if borderline overflow */
+  }
+
+  /* Editor-view fallback path (Ctrl+P from editor without entering preview).
+     Hide the page-rect overlay (we let the print engine paginate the
+     contenteditable directly), strip shadows/gaps, and pad the contenteditable
+     to provide the print margin. */
+  .notes-editor-shell,
+  .notes-editor-scroller {
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+  .notes-pages-overlay {
+    display: none !important;
+  }
+  .notes-pages-wrapper {
+    min-height: 0 !important;
+    max-width: 100% !important;
+    width: auto !important;
+  }
+  .notes-pages-wrapper .notes-editor-content {
+    padding: 0.5in !important;
+    background: #ffffff !important;
+  }
+
+  /* Universal light theme + serif inside any .notes-view that prints. */
+  .notes-view {
+    color: #111111 !important;
+    font-size: 12pt;
+    max-width: 100% !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+    max-height: none !important;
+    min-height: 0 !important;
+  }
+  .notes-view h1,
+  .notes-view h2,
+  .notes-view h3,
+  .notes-view h4 {
+    color: #000 !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  .notes-view h1 {
+    border-bottom: 1px solid #555 !important;
+  }
+  .notes-view li,
+  .notes-view p,
+  .notes-view blockquote {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .notes-view table {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+  .notes-view thead {
+    display: table-header-group;
+    background: #f3f4f6 !important;
+  }
+  .notes-view tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .notes-view code {
+    background: #f3f4f6 !important;
+    border: 1px solid #d1d5db !important;
+    color: #b45309 !important;
+  }
+  .notes-view pre {
+    background: #f9fafb !important;
+    border: 1px solid #d1d5db !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .notes-view pre code {
+    background: transparent !important;
+    border: none !important;
+    color: #111 !important;
+  }
+  .notes-view blockquote {
+    color: #374151 !important;
+    border-left-color: #9ca3af !important;
+  }
+  .notes-view th,
+  .notes-view td {
+    border-color: #9ca3af !important;
+  }
+  .notes-view a {
+    color: #1d4ed8 !important;
+  }
+  .nv-blank {
+    background: #fef3c7 !important;
+    color: #92400e !important;
+  }
+
+  /* @page margin = 0 because content (paginated-page or notes-editor-content)
+     provides its own 0.5in padding. Keeps margin behavior consistent across
+     both print paths. */
+  @page {
+    margin: 0;
+    size: letter;
+  }
+}

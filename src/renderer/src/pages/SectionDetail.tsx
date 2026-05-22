@@ -1,20 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
-  useEnhanceNotes,
   useGenerateSectionItems,
-  useIngestNotes,
   useKnowledgeUnits,
   useSection,
   useSectionStudyItems,
-  useUpdateSection,
 } from "../lib/api";
-import { Button, Card, ErrorText, Spinner } from "../components/ui";
+import type { Section } from "../lib/types";
+import { Button, ErrorText, Spinner } from "../components/ui";
 import { KURow } from "../components/KURow";
 import { CardRow } from "../components/CardRow";
 import { Modal } from "../components/Modal";
-import { EnhanceMergeModal } from "../components/EnhanceMergeModal";
+import { NotesPane } from "../components/NotesPane";
 
 type Panel = "kus" | "cards" | null;
 
@@ -42,45 +40,18 @@ export default function SectionDetail() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          to={`/courses/${courseId}`}
-          className="text-sm text-slate-400 hover:text-slate-100"
-        >
-          ← Course
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">{section.data.title}</h1>
-        <div className="mt-1 text-xs text-slate-400">
-          difficulty {section.data.difficulty}
-        </div>
-      </div>
-
-      {/* Clickable tile row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Tile
-          label="Knowledge units"
-          value={kuCount}
-          sub="click to view & edit"
-          onClick={() => setPanel("kus")}
-        />
-        <Tile
-          label="Cards"
-          value={cardCount}
-          sub="click to view & edit"
-          onClick={() => setPanel("cards")}
-        />
-        <Tile
-          label="Review"
-          value="▶"
-          sub={cardCount > 0 ? `${cardCount} cards` : "no cards yet"}
-          onClick={() =>
-            cardCount > 0 &&
-            navigate(`/courses/${courseId}/sections/${id}/review`)
-          }
-          disabled={cardCount === 0}
-          accent="emerald"
-        />
-      </div>
+      <SectionNavBar
+        courseId={courseId ?? ""}
+        section={section.data}
+        kuCount={kuCount}
+        cardCount={cardCount}
+        onOpenKUs={() => setPanel("kus")}
+        onOpenCards={() => setPanel("cards")}
+        onStartReview={() =>
+          cardCount > 0 &&
+          navigate(`/courses/${courseId}/sections/${id}/review`)
+        }
+      />
 
       {/* Notes — full width, center stage */}
       <NotesPane sectionId={id} initialNotes={section.data.notes} />
@@ -232,36 +203,77 @@ function CardsPanelContent({
   );
 }
 
-// ----- Tile -----
+// ----- Section nav bar (sticky, replaces the old tile row) -----
 
-function Tile({
+function SectionNavBar({
+  courseId,
+  section,
+  kuCount,
+  cardCount,
+  onOpenKUs,
+  onOpenCards,
+  onStartReview,
+}: {
+  courseId: string;
+  section: Section;
+  kuCount: number;
+  cardCount: number;
+  onOpenKUs: () => void;
+  onOpenCards: () => void;
+  onStartReview: () => void;
+}) {
+  return (
+    <div className="no-print sticky top-0 z-30 -mx-6 px-6 py-3 bg-slate-950/95 backdrop-blur border-b border-slate-800">
+      <div className="flex items-center gap-3 flex-wrap">
+        <Link
+          to={`/courses/${courseId}`}
+          className="inline-flex items-center text-sm text-slate-400 hover:text-slate-100 shrink-0"
+          title="Back to course"
+        >
+          ← Course
+        </Link>
+        <div className="hidden sm:block h-5 w-px bg-slate-700 shrink-0" />
+        <h1 className="min-w-0 flex-1 truncate text-base sm:text-lg font-semibold">
+          {section.title}
+          <span className="ml-2 text-xs text-slate-500 font-normal">
+            · difficulty {section.difficulty}
+          </span>
+        </h1>
+        <NavBtn label="KUs" count={kuCount} onClick={onOpenKUs} />
+        <NavBtn label="Cards" count={cardCount} onClick={onOpenCards} />
+        <Button
+          variant="primary"
+          disabled={cardCount === 0}
+          onClick={onStartReview}
+          className="shrink-0"
+          title={cardCount > 0 ? `Review ${cardCount} cards` : "No cards yet"}
+        >
+          ▶ Review{cardCount > 0 ? ` (${cardCount})` : ""}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NavBtn({
   label,
-  value,
-  sub,
+  count,
   onClick,
-  disabled,
-  accent = "default",
 }: {
   label: string;
-  value: number | string;
-  sub?: string;
+  count: number;
   onClick: () => void;
-  disabled?: boolean;
-  accent?: "default" | "emerald";
 }) {
-  const accentClass =
-    accent === "emerald"
-      ? "border-emerald-700/50 bg-emerald-950/30 hover:border-emerald-500 hover:bg-emerald-900/30"
-      : "border-slate-800 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/70";
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
-      className={`rounded-lg border px-4 py-4 text-left transition ${accentClass} disabled:opacity-40 disabled:cursor-not-allowed`}
+      className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm bg-slate-900 border border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600 transition shrink-0"
+      title={`${count} ${label.toLowerCase()}`}
     >
-      <div className="text-xs uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 text-3xl font-semibold">{value}</div>
-      {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+      <span>{label}</span>
+      <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs font-mono text-slate-400">
+        {count}
+      </span>
     </button>
   );
 }
@@ -294,136 +306,3 @@ function KUGenerateButton({
   );
 }
 
-// ----- Notes pane (full width, primary content) -----
-
-function NotesPane({
-  sectionId,
-  initialNotes,
-}: {
-  sectionId: number;
-  initialNotes: string;
-}) {
-  const kus = useKnowledgeUnits(sectionId);
-  const updateSection = useUpdateSection(sectionId);
-  const ingest = useIngestNotes(sectionId);
-  const enhance = useEnhanceNotes(sectionId);
-
-  const [notes, setNotes] = useState<string>("");
-  const [synced, setSynced] = useState(false);
-  useEffect(() => {
-    if (!synced) {
-      setNotes(initialNotes);
-      setSynced(true);
-    }
-  }, [initialNotes, synced]);
-
-  const [ingestResult, setIngestResult] = useState<string | null>(null);
-  const [enhanceResult, setEnhanceResult] = useState<
-    { original: string; enhanced: string } | null
-  >(null);
-  const hasUnsavedNotes = synced && notes !== initialNotes;
-  const hasKUs = (kus.data?.length ?? 0) > 0;
-
-  async function saveNotes() {
-    await updateSection.mutateAsync({ notes });
-  }
-
-  async function runEnhance(mode: "polish" | "expand") {
-    if (!notes.trim()) return;
-    setEnhanceResult(null);
-    const res = await enhance.mutateAsync({ text: notes, mode });
-    setEnhanceResult(res);
-  }
-
-  async function runIngest() {
-    setIngestResult(null);
-    let willReplace = false;
-    if (hasKUs) {
-      willReplace = confirm(
-        `This section already has ${kus.data?.length ?? 0} knowledge units. Replace them with new ones extracted from these notes?`,
-      );
-      if (!willReplace) return;
-    }
-    if (hasUnsavedNotes) {
-      await updateSection.mutateAsync({ notes });
-    }
-    const res = await ingest.mutateAsync({ replace: willReplace });
-    setIngestResult(`Created ${res.created.length} knowledge units.`);
-  }
-
-  return (
-    <Card className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Notes</h2>
-        {hasUnsavedNotes && (
-          <span className="text-xs text-amber-400">Unsaved changes</span>
-        )}
-      </div>
-      <textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        rows={Math.max(20, Math.min(40, (notes || "").split("\n").length + 4))}
-        placeholder="Paste or write your notes here. Click Save to persist them. Click Ingest to turn them into knowledge units."
-        spellCheck
-        autoCorrect="on"
-        autoCapitalize="sentences"
-        className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-600 font-mono leading-relaxed"
-      />
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          onClick={saveNotes}
-          disabled={!hasUnsavedNotes || updateSection.isPending}
-        >
-          {updateSection.isPending ? "Saving…" : "Save notes"}
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => runEnhance("polish")}
-          disabled={enhance.isPending || !notes.trim()}
-          title="Fix spelling/grammar/structure. Won't add new content. You review the diff before it applies."
-        >
-          {enhance.isPending ? "Working…" : "✨ Polish"}
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => runEnhance("expand")}
-          disabled={enhance.isPending || !notes.trim()}
-          title="Fill in missing detail. Adds definitions, sub-topics, structure for stubby notes. You review the diff before it applies."
-        >
-          {enhance.isPending ? "Working…" : "📚 Expand"}
-        </Button>
-        <Button
-          onClick={runIngest}
-          disabled={ingest.isPending || !notes.trim()}
-        >
-          {ingest.isPending ? "Ingesting…" : "Ingest notes → KUs"}
-        </Button>
-        {(ingest.isPending || enhance.isPending) && (
-          <span className="text-xs text-slate-400 self-center">
-            {enhance.isPending ? "10-25 sec" : "10-30 sec"}
-          </span>
-        )}
-      </div>
-      {ingest.error && (
-        <ErrorText>{(ingest.error as Error).message}</ErrorText>
-      )}
-      {enhance.error && (
-        <ErrorText>{(enhance.error as Error).message}</ErrorText>
-      )}
-      {ingestResult && (
-        <div className="text-xs text-emerald-300">{ingestResult}</div>
-      )}
-
-      {enhanceResult && (
-        <EnhanceMergeModal
-          open
-          onClose={() => setEnhanceResult(null)}
-          original={enhanceResult.original}
-          enhanced={enhanceResult.enhanced}
-          onApply={(merged) => setNotes(merged)}
-        />
-      )}
-    </Card>
-  );
-}

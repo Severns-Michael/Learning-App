@@ -84,32 +84,43 @@ GENERATE_STUDY_ITEMS_TOOL = {
 EXTRACT_CONCEPTS_TOOL = {
     "name": "extract_concepts",
     "description": (
-        "Save a list of atomic knowledge units extracted from study notes. "
-        "Always call this tool — do not reply in prose."
+        "Save a list of topic-sized knowledge units extracted from study notes. "
+        "Each KU is broader than a single fact and narrower than a section — "
+        "the right size to support 2–3 distinct test questions. Always call this "
+        "tool — do not reply in prose."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "knowledge_units": {
                 "type": "array",
-                "description": "Knowledge units extracted from the notes.",
+                "description": "Topic-sized knowledge units extracted from the notes.",
                 "items": {
                     "type": "object",
                     "properties": {
                         "concept_summary": {
                             "type": "string",
                             "description": (
-                                "One- or two-sentence self-contained statement of the concept."
+                                "Two- to four-sentence self-contained statement naming "
+                                "the topic and what it covers, including key sub-concepts. "
+                                "Avoid filler like 'this section covers'."
                             ),
                         },
                         "source_chunk": {
                             "type": "string",
                             "description": (
-                                "The slice of the original notes this unit came from."
+                                "The verbatim slice of the original notes this unit came from. "
+                                "Used for provenance and to seed distractors later."
                             ),
                         },
                         "key_terms": {
                             "type": "array",
+                            "minItems": 2,
+                            "description": (
+                                "Vocabulary central to this topic with one-line definitions. "
+                                "Three to six entries typical. Required because matching items "
+                                "are built from these pairs."
+                            ),
                             "items": {
                                 "type": "object",
                                 "properties": {
@@ -132,14 +143,27 @@ EXTRACT_CONCEPTS_TOOL = {
                         },
                         "connection_tags": {
                             "type": "array",
+                            "description": (
+                                "1–4 short lower-case-with-hyphens topic tags "
+                                "(e.g. 'encryption', 'session-management')."
+                            ),
                             "items": {"type": "string"},
                         },
                         "common_misconceptions": {
                             "type": "array",
+                            "description": (
+                                "Optional. Well-known confusions students have with THIS "
+                                "concept. Omit (don't fabricate) if nothing comes to mind."
+                            ),
                             "items": {"type": "string"},
                         },
                     },
-                    "required": ["concept_summary", "blooms_level"],
+                    "required": [
+                        "concept_summary",
+                        "source_chunk",
+                        "key_terms",
+                        "blooms_level",
+                    ],
                 },
             },
         },

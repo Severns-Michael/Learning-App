@@ -146,11 +146,29 @@ export function useKnowledgeUnits(sectionId: number | undefined) {
   });
 }
 
+export type EnhanceMode = "polish" | "expand" | "fill_blanks";
+
 export function useEnhanceNotes(sectionId: number) {
   return useMutation({
-    mutationFn: (opts: { text?: string; mode?: "polish" | "expand" } = {}) =>
+    mutationFn: (opts: { text?: string; mode?: EnhanceMode } = {}) =>
       request<{ original: string; enhanced: string; mode: string }>(
         `/sections/${sectionId}/enhance_notes/`,
+        { method: "POST", body: JSON.stringify(opts) },
+      ),
+  });
+}
+
+export function useRewritePassage(sectionId: number) {
+  return useMutation({
+    mutationFn: (opts: {
+      original: string;
+      previous?: string;
+      instruction: string;
+      context_before?: string;
+      context_after?: string;
+    }) =>
+      request<{ rewritten: string }>(
+        `/sections/${sectionId}/rewrite_passage/`,
         { method: "POST", body: JSON.stringify(opts) },
       ),
   });
